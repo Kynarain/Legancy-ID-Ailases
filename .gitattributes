@@ -1,0 +1,8 @@
+# Keep the repository in LF and only use CRLF for Windows-only files.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.jar binary
+*.png binary
+gradle/wrapper/gradle-wrapper.jar binary
