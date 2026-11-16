@@ -1,5 +1,8 @@
 # Legacy ID Aliases
 
+> 仓库名沿用创建时的写法 `Legancy-ID-Ailases`（含拼写差异），模组 id 为 `legacy_id_aliases`，
+> 包名 `cn.kynarain.legacyidaliases`。
+
 把 1.13 扁平化之前的**数字 ID**（`物品/方块 id + 损伤值`）重新变回可用标识符的 Fabric 模组，
 面向 Minecraft **1.21.1**。
 
