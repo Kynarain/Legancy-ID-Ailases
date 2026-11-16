@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "cn.kynarain.legacyidaliases.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"GiveCommandMixin",
+		"SimpleRegistryMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

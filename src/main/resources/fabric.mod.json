@@ -1,0 +1,39 @@
+{
+	"schemaVersion": 1,
+	"id": "legacy_id_aliases",
+	"version": "${version}",
+	"name": "Legacy ID Aliases",
+	"description": "Restores the pre-1.13 numeric ids (item/block id + damage) as aliases of the flattened identifiers: /give @s 35:14, registry aliases and a user extensible JSON mapping format.",
+	"authors": [
+		"Kynarain"
+	],
+	"contact": {
+		"homepage": "https://github.com/Kynarain/Legancy-ID-Ailases",
+		"sources": "https://github.com/Kynarain/Legancy-ID-Ailases",
+		"issues": "https://github.com/Kynarain/Legancy-ID-Ailases/issues"
+	},
+	"license": "GPL-2.0-only",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"cn.kynarain.legacyidaliases.LegacyIdAliasesMod"
+		]
+	},
+	"mixins": [
+		"legacy_id_aliases.mixins.json"
+	],
+	"accessWidener": "legacy_id_aliases.accesswidener",
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"fabric-api": "*",
+		"minecraft": "~1.21.1",
+		"java": ">=21"
+	},
+	"custom": {
+		"modmenu": {
+			"badges": [
+				"library"
+			]
+		}
+	}
+}
