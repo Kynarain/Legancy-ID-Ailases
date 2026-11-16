@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-17
+
+### Fixed
+
+- 首次启动写入的示例映射文件不再被当成真实映射加载：它现在保存为
+  `config/legacy_id_aliases/example.json.example`，复制成 `.json` 才会生效。
+
 ## [0.1.0] - 2026-11-17
 
 首个可用版本。

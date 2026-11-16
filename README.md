@@ -60,7 +60,7 @@
 ## JSON 映射格式
 
 `config/legacy_id_aliases/` 下的每个 `*.json` 都会被加载（按文件名排序，后加载的覆盖先加载的）。
-第一次启动会自动生成 `example.json`：
+第一次启动会写出一份示例 `example.json.example`，复制成 `something.json` 才会被当作真实映射加载。
 
 ```json
 {

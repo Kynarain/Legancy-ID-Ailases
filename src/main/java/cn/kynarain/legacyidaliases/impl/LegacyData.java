@@ -34,7 +34,11 @@ public final class LegacyData {
 	private static final Logger LOGGER = LoggerFactory.getLogger("Legacy ID Aliases/Data");
 	private static final String RESOURCE_ROOT = "/data/legacy_id_aliases/legacy_ids/";
 	private static final String CONFIG_FOLDER = "legacy_id_aliases";
-	private static final String EXAMPLE_FILE = "example.json";
+	/**
+	 * The sample mapping is written with a double extension so it is not loaded as a real mapping:
+	 * everything ending in {@code .json} is treated as user configuration.
+	 */
+	private static final String EXAMPLE_FILE = "example.json.example";
 	private static final String EXAMPLE_JSON = """
 		{
 		  "//": "Legacy ID Aliases - user mappings. Every *.json file in this folder is loaded.",
@@ -115,6 +119,7 @@ public final class LegacyData {
 		Path example = configDirectory.resolve(EXAMPLE_FILE);
 		try {
 			Files.writeString(example, EXAMPLE_JSON, StandardCharsets.UTF_8);
+			LOGGER.info("Wrote a sample mapping to {} (copy it to <name>.json to activate it)", example);
 		} catch (IOException exception) {
 			LOGGER.debug("Could not write the example mapping file", exception);
 		}
