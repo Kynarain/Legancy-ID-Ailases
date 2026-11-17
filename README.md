@@ -95,35 +95,71 @@
 
 ## 对外 API
 
+稳定包名只有 `cn.kynarain.legacyidaliases.api`；`impl` 与 `mixin` 是实现细节，不保证兼容。
+所有方法都在每个类/方法的 javadoc 里有说明。
+
+### 查表与解析
+
+| 方法 | 返回 | 说明 |
+| --- | --- | --- |
+| `table(LegacyRegistry)` | `LegacyIdTable` | 该注册表的完整映射（不可变、按 id 排序） |
+| `resolve(LegacyRegistry, LegacyId)` | `Optional<Identifier>` | 只取标识符 |
+| `resolveTarget(LegacyRegistry, LegacyId)` | `Optional<LegacyIdTarget>` | 标识符 + 可选药水组件 |
+| `resolveItem(int, int)` / `resolveBlock(int, int)` | `Optional<Identifier>` | 便捷重载 |
+| `resolveItemStack(int, int[, int count])` | `Optional<ItemStack>` | 直接得到带 `potion_contents` 的物品栈 |
+| `resolveEntry(LegacyRegistry, LegacyId)` | `Optional<RegistryEntry.Reference<?>>` | 同时确认目标存在于当前注册表 |
+| `unresolved(LegacyRegistry)` | `List<Identifier>` | 映射目标已被当前版本删除的条目 |
+| `stats()` | `Map<LegacyRegistry, LegacyRegistryStats>` | 条目数 / 别名数 / 丢弃数 |
+
+解析会自动做 `id:meta → id:0` 回退（例如 `1:7 → stone`），`LegacyIdTable` 另有
+`lookup*` 系列可直接取 `LegacyIdTarget`。
+
+### 注册表别名
+
+| 方法 | 说明 |
+| --- | --- |
+| `addAlias(Registry, alias, target)` / `removeAlias(Registry, alias)` | 真正写进注册表的别名，所有 identifier / registry key 查询可见，且不会覆盖真实注册项 |
+| `aliasIds(LegacyRegistry, LegacyId)` / `aliasId(...)` | 数字 id 的别名 identifier（`minecraft:35`、`35:14`、`minecraft:35_14`） |
+| `supportsAliases(Registry)` | 当前 MC 版本是否支持别名（1.21.1 由模组的 `SimpleRegistry` mixin 提供） |
+
+别名的目标只能是 identifier，因此**药水这类“标识符 + 组件”的变体不走别名**：别名最多指到
+`minecraft:potion`，带种类的结果由 `resolveTarget` / `resolveItemStack` / `/give` 提供。
+
+### 扩展
+
+| 方法 | 说明 |
+| --- | --- |
+| `registerSource(LegacyIdSource)` | 批量贡献映射，sink 接受 `LegacyIdTarget`（可带药水）；注册表冻结后注册会立即重建 |
+| `addMapping(LegacyRegistry, LegacyId, LegacyIdTarget)` / `removeMapping(...)` | 运行时单条映射，立即生效（表与别名一起重建） |
+
 ```java
-import cn.kynarain.legacyidaliases.api.LegacyId;
-import cn.kynarain.legacyidaliases.api.LegacyIdAliases;
-import cn.kynarain.legacyidaliases.api.LegacyIdTarget;
-import cn.kynarain.legacyidaliases.api.LegacyRegistry;
+import cn.kynarain.legacyidaliases.api.*;
 
-// 1. 查表
-Optional<Identifier> wool = LegacyIdAliases.resolveItem(35, 14);           // minecraft:red_wool
-LegacyIdAliases.resolveTarget(LegacyRegistry.ITEM, LegacyId.parse("373:5")); // potion + healing 组件
-LegacyIdAliases.resolveItemStack(373, 5);                                  // 带 potion_contents 的 ItemStack
-LegacyIdAliases.table(LegacyRegistry.ITEM).lookup(276, 0);                 // minecraft:diamond_sword
+// 1. 解析（组件感知）
+LegacyIdAliases.resolveItem(35, 14);                                    // Optional[minecraft:red_wool]
+LegacyIdAliases.resolveTarget(LegacyRegistry.ITEM, LegacyId.parse("373:5"))
+    .ifPresent(target -> {
+        target.identifier();   // minecraft:potion
+        target.potion();       // minecraft:healing
+        ItemStack stack = target.createStack(1);   // 带 potion_contents
+    });
 
-// 2. 让指定注册表接受一个别名（不覆盖真实注册项）
-LegacyIdAliases.addAlias(Registries.ITEM, Identifier.of("35", "14"), Identifier.of("minecraft", "red_wool"));
+// 2. 运行时加映射（含药水）
+LegacyIdAliases.addMapping(LegacyRegistry.ITEM, LegacyId.of(9000, 3),
+    LegacyIdTarget.of(Identifier.of("yourmod", "ruby")));
+LegacyIdAliases.addMapping(LegacyRegistry.ITEM, LegacyId.of(9001),
+    LegacyIdTarget.ofPotion(Identifier.of("minecraft", "potion"), Identifier.of("minecraft", "swiftness")));
 
-// 3. 贡献自己的旧 ID（在模组初始化阶段调用）
+// 3. 别名（identifier 级）
+LegacyIdAliases.addAlias(Registries.ITEM, Identifier.of("9000", "3"), Identifier.of("yourmod", "ruby"));
+
+// 4. 批量来源（推荐在模组初始化阶段注册）
 LegacyIdAliases.registerSource((registry, sink) -> {
     if (registry == LegacyRegistry.ITEM) {
-        sink.accept(LegacyId.of(9000, 3), LegacyIdTarget.of(Identifier.of("yourmod", "ruby")));
-        // 需要组件时：sink.accept(LegacyId.of(9001, 0), LegacyIdTarget.ofPotion(itemId, potionId));
+        sink.accept(LegacyId.of(9002, 0), LegacyIdTarget.of(Identifier.of("yourmod", "sapphire")));
     }
 });
 ```
-
-注册表别名接口：
-
-- `LegacyIdAliases.supportsAliases(Registry<?>)`：当前版本是否支持别名（1.21.1 靠模组自己的
-  `SimpleRegistry` mixin 实现，1.21.2+ 的原版 `addAlias` 不存在于本分支）。
-- `LegacyIdAliases.aliasIds(LegacyRegistry, LegacyId)`：某个旧 ID 的全部别名 identifier。
 
 命令参数类型也可以被其他模组复用：
 

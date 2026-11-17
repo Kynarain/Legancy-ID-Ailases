@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-17
+
+### Added
+
+- API：运行时单条映射 `addMapping` / `removeMapping`（支持药水组件，立即重建表与别名）。
+- API：`resolveItemStack(id, meta, count)` 重载、`unresolved(registry)` 与 `stats()` 诊断接口，
+  以及对应的 `LegacyRegistryStats` 记录。
+- README 的 API 章节整理成方法表，明确“别名只能到 identifier、组件变体走解析/命令”的边界。
+
 ## [0.2.0] - 2026-11-17
 
 ### Added
