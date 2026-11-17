@@ -10,6 +10,8 @@
 /give @s 35:14      # 红色羊毛 (35 号 = 羊毛, meta 14 = 红色)
 /give @s 1:1        # 花岗岩
 /give @s 276        # 钻石剑
+/give @s 373:5      # 治疗药水（potion + potion_contents 组件）
+/give @s 441:34     # 滞留型强力迅捷药水
 /give @s minecraft:35_14
 ```
 
@@ -41,11 +43,12 @@
 | 方块 `id:meta` → 现代方块 | `net.minecraft.datafixer.fix.BlockStateFlattening`（按 `id << 4 \| meta` 索引） |
 | 方块物品 | 上表的方块 id（原版方块物品与方块同名） |
 | 物品 `id:meta` → 现代物品 | `ItemInstanceTheFlatteningFix.FLATTENING_MAP`（羊毛、染料、头颅、鱼、唱片……） |
+| 药水 `id:meta` → 物品 + `potion_contents` | `ItemPotionFix.ID_TO_POTIONS`（低 7 位选药水，`0x4000` 为喷溅位） |
 | 1.12 数字 ID 的名称 | `tools/generate_data.py` 生成的 1.12 数据集 |
 | 1.13+ 新增物品的顺序 | 同上，按各个版本物品列表首次出现的位置排序 |
 
 `tools/generate_data.py` 只生成原版没有暴露的部分（旧名称、新增顺序、少量改名），
-方块/物品的扁平化映射始终在运行时从原版数据推导，因此原版更新后不会出现两份互相矛盾的映射。
+方块/物品/药水的映射始终在运行时从原版数据推导，因此原版更新后不会出现两份互相矛盾的映射。
 
 ## 命令
 
@@ -68,7 +71,8 @@
   "registries": {
     "item": {
       "35:14": "minecraft:red_wool",
-      "1000": "minecraft:paper"
+      "1000": "minecraft:paper",
+      "373:5": { "id": "minecraft:potion", "potion": "minecraft:healing" }
     },
     "block": {
       "196": "minecraft:oak_sign"
@@ -83,6 +87,8 @@
 - 键：`id` 或 `id:meta`（只有 `item` / `block` 支持 meta）。
 - 值：现代标识符，可以省略 `minecraft:` 命名空间；也可以写成对象
   `{"id": "minecraft:red_wool"}`。
+- 药水这类“标识符 + 数据组件”的变体用 `potion` 字段表达：`{"id": "minecraft:potion", "potion": "minecraft:healing"}`
+  等价于 `/give @s potion[minecraft:potion_contents={potion:'minecraft:healing'}]`。
 - 注册表名：`item`、`block`、`entity_type`、`biome`、`mob_effect`、`enchantment`、
   `particle_type`，也接受带命名空间的写法（`minecraft:item`）。
 - 用户文件优先级最高，会覆盖内置映射；`/legacyids reload` 可热重载。
@@ -92,10 +98,13 @@
 ```java
 import cn.kynarain.legacyidaliases.api.LegacyId;
 import cn.kynarain.legacyidaliases.api.LegacyIdAliases;
+import cn.kynarain.legacyidaliases.api.LegacyIdTarget;
 import cn.kynarain.legacyidaliases.api.LegacyRegistry;
 
 // 1. 查表
 Optional<Identifier> wool = LegacyIdAliases.resolveItem(35, 14);           // minecraft:red_wool
+LegacyIdAliases.resolveTarget(LegacyRegistry.ITEM, LegacyId.parse("373:5")); // potion + healing 组件
+LegacyIdAliases.resolveItemStack(373, 5);                                  // 带 potion_contents 的 ItemStack
 LegacyIdAliases.table(LegacyRegistry.ITEM).lookup(276, 0);                 // minecraft:diamond_sword
 
 // 2. 让指定注册表接受一个别名（不覆盖真实注册项）
@@ -104,7 +113,8 @@ LegacyIdAliases.addAlias(Registries.ITEM, Identifier.of("35", "14"), Identifier.
 // 3. 贡献自己的旧 ID（在模组初始化阶段调用）
 LegacyIdAliases.registerSource((registry, sink) -> {
     if (registry == LegacyRegistry.ITEM) {
-        sink.accept(LegacyId.of(9000, 3), Identifier.of("yourmod", "ruby"));
+        sink.accept(LegacyId.of(9000, 3), LegacyIdTarget.of(Identifier.of("yourmod", "ruby")));
+        // 需要组件时：sink.accept(LegacyId.of(9001, 0), LegacyIdTarget.ofPotion(itemId, potionId));
     }
 });
 ```
@@ -134,7 +144,14 @@ LegacyItemStackArgumentType.itemStack(registryAccess) // ArgumentType<ItemStackA
 
 ## 已知限制
 
-- **带 meta 的药水**（`373:<meta>`）无法映射：1.13 之后药水种类由数据组件表达，不是一个物品 ID。
+- **药水的数字形式是 1.9 之前的编码**：`373:<damage>` 的低 7 位选药水、`0x4000` 位表示喷溅，
+  这套表就是原版 `ItemPotionFix` 仍在使用的表。1.9 之后药水种类改存 NBT / 数据组件，
+  所以“1.12 的 `373:5`”在当年本身就只是个带损伤值的药水物品；本模组按旧版数字语义解释它。
+  `438` / `441`（1.9+ 的喷溅 / 滞留药水物品 ID）复用同一张表，方便按数字直接给药水。
+  注册表别名只能指向 identifier，因此**别名级别的药水只会得到普通药水**，带种类的药水只通过
+  `/give`（以及 API 的 `resolveTarget` / `resolveItemStack`）提供。
+- 药水映射不包含 `minecraft:water` 之外的“无效果瓶”自定义效果（`custom_effects` 由组件表达），
+  需要时请直接在命令里写组件。
 - **动态注册表**（biome / enchantment）的别名在服务器数据加载后、注册表冻结时注入；修改映射后
   需要 `/legacyids reload` 或重进世界才会重建。
 - 旧版中“没有物品形式的方块”（水、传送门方块、可可果、作物等）没有物品可给；而曾经是独立
@@ -181,7 +198,7 @@ GPL-2.0-only，见 [LICENSE](LICENSE)。
 | 注册表 | 条目数 | 别名数 | 无法解析 |
 | --- | --- | --- | --- |
 | `minecraft:block` | 4534 | 9068 | 0 |
-| `minecraft:item` | 4577 | 9154 | 0 |
+| `minecraft:item` | 5086 | 10172 | 0 |
 | `minecraft:entity_type` | 130 | 130 | 0 |
 | `minecraft:biome` | 64 | 64 | 0 |
 | `minecraft:mob_effect` | 39 | 39 | 0 |

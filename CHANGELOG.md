@@ -4,6 +4,27 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
+### Added
+
+- 药水支持：`373:<damage>`（含 `0x4000` 喷溅位）、`438:<damage>`、`441:<damage>` 会解析成
+  `potion` / `splash_potion` / `lingering_potion` 并附带 `minecraft:potion_contents` 组件，
+  药水种类来自原版 `ItemPotionFix.ID_TO_POTIONS`。
+- `LegacyIdTarget`（identifier + 可选的药水组件）、`LegacyIdAliases.resolveTarget` 与
+  `resolveItemStack`。
+- JSON 映射值支持 `{"id": "...", "potion": "..."}`，`/give` 里数字形式也可以继续追加组件
+  （例如 `373:5[minecraft:custom_model_data=7]`）。
+
+### Changed
+
+- **不兼容**：`LegacyIdTable` 的值类型改为 `LegacyIdTarget`，`LegacyIdSource` 的 sink 也改为
+  `BiConsumer<LegacyId, LegacyIdTarget>`（`0.y.z` 阶段，MINOR 版本允许破坏性变更）。
+
+### Fixed
+
+- `373:<任意 meta>` 之前会静默回退成水瓶，现在按旧版伤害表解析。
+
 ## [0.1.1] - 2026-11-17
 
 ### Fixed
