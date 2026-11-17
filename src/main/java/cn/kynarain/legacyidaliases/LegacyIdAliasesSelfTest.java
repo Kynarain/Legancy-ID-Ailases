@@ -14,11 +14,14 @@ import java.util.List;
 import java.util.Map;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.command.argument.ItemStackArgument;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.PotionContentsComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.util.Identifier;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Development helper: validates the generated tables and the legacy {@code /give} syntax on a real
@@ -68,6 +71,17 @@ public final class LegacyIdAliasesSelfTest {
 		failures += expect(server, report, "give @s 2267", "minecraft:music_disc_wait");
 		failures += expect(server, report, "give @s 2268", null);
 		failures += expect(server, report, "give @s minecraft:stone", "minecraft:stone");
+		// Potions: the variant lives in a data component, not in the item id. A potion without
+		// contents is a water bottle, so 373 and 373:0 carry no component while 373:5 does.
+		failures += expect(server, report, "give @s 373", "minecraft:potion", null);
+		failures += expect(server, report, "give @s 373:0", "minecraft:potion", null);
+		failures += expect(server, report, "give @s 373:5", "minecraft:potion", "minecraft:healing");
+		failures += expect(server, report, "give @s 373:16389", "minecraft:splash_potion", "minecraft:healing");
+		failures += expect(server, report, "give @s 438:5", "minecraft:splash_potion", "minecraft:healing");
+		failures += expect(server, report, "give @s 441:34", "minecraft:lingering_potion", "minecraft:strong_swiftness");
+		failures += expect(server, report, "give @s 373:66", "minecraft:potion", "minecraft:long_swiftness");
+		failures += expect(server, report, "give @s 373:5 3", "minecraft:potion", "minecraft:healing");
+		failures += expect(server, report, "give @s 373:5[minecraft:custom_model_data=7]", "minecraft:potion", "minecraft:healing");
 		// The registry aliases also cover the vanilla commands that parse identifiers themselves.
 		failures += expectParse(server, report, "clear @s 35:14");
 		failures += expectParse(server, report, "item replace entity @s weapon.mainhand with 35:14");
@@ -130,6 +144,20 @@ public final class LegacyIdAliasesSelfTest {
 	}
 
 	private static int expect(MinecraftServer server, List<String> report, String command, String expected) {
+		return expect(server, report, command, expected, null);
+	}
+
+	/**
+	 * @param expected the expected item id, or {@code null} to only require a successful parse;
+	 *                 {@code expectedPotion} additionally checks the potion contents component
+	 */
+	private static int expect(
+		MinecraftServer server,
+		List<String> report,
+		String command,
+		@Nullable String expected,
+		@Nullable String expectedPotion
+	) {
 		ParseResults<ServerCommandSource> results;
 		try {
 			results = server.getCommandManager().getDispatcher().parse(command, server.getCommandSource());
@@ -160,12 +188,19 @@ public final class LegacyIdAliasesSelfTest {
 			return 1;
 		}
 		Identifier id = Registries.ITEM.getId(stack.getItem());
-		if (expected == null) {
-			report.add("ok   " + command + " -> " + id);
+		PotionContentsComponent contents = stack.get(DataComponentTypes.POTION_CONTENTS);
+		String potion = contents == null
+			? null
+			: contents.potion().map(entry -> Registries.POTION.getId(entry.value()).toString()).orElse(null);
+		boolean nameSet = stack.get(DataComponentTypes.CUSTOM_NAME) != null;
+		String detail = " -> " + id + (potion == null ? "" : " / " + potion) + (nameSet ? " / custom_name" : "");
+		if (expected == null && expectedPotion == null) {
+			report.add("ok   " + command + detail);
 			return 0;
 		}
-		boolean matches = expected.equals(id.toString());
-		report.add((matches ? "ok   " : "FAIL ") + command + " -> " + id + " (expected " + expected + ")");
+		boolean matches = (expected == null || expected.equals(id.toString()))
+			&& (expectedPotion == null || expectedPotion.equals(potion));
+		report.add((matches ? "ok   " : "FAIL ") + command + detail + (matches ? "" : " (unexpected)"));
 		return matches ? 0 : 1;
 	}
 }

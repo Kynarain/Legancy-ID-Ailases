@@ -10,31 +10,31 @@ import java.util.TreeSet;
 import net.minecraft.util.Identifier;
 
 /**
- * An immutable legacy id to modern identifier table of one registry.
+ * An immutable legacy id to {@link LegacyIdTarget} table of one registry.
  *
  * <p>Tables are sorted by {@link LegacyId} so iteration is stable between runs.
  */
 public final class LegacyIdTable {
 	public static final LegacyIdTable EMPTY = new LegacyIdTable(Collections.emptyNavigableMap());
 
-	private final NavigableMap<LegacyId, Identifier> entries;
+	private final NavigableMap<LegacyId, LegacyIdTarget> entries;
 
-	private LegacyIdTable(NavigableMap<LegacyId, Identifier> entries) {
+	private LegacyIdTable(NavigableMap<LegacyId, LegacyIdTarget> entries) {
 		this.entries = entries;
 	}
 
 	/**
 	 * Copies and sorts the given mappings into a new table.
 	 */
-	public static LegacyIdTable of(Map<LegacyId, Identifier> entries) {
+	public static LegacyIdTable of(Map<LegacyId, LegacyIdTarget> entries) {
 		return new LegacyIdTable(Collections.unmodifiableNavigableMap(new TreeMap<>(entries)));
 	}
 
-	public Optional<Identifier> lookup(LegacyId id) {
+	public Optional<LegacyIdTarget> lookup(LegacyId id) {
 		return Optional.ofNullable(this.entries.get(id));
 	}
 
-	public Optional<Identifier> lookup(int id, int meta) {
+	public Optional<LegacyIdTarget> lookup(int id, int meta) {
 		return this.lookup(new LegacyId(id, meta));
 	}
 
@@ -42,15 +42,23 @@ public final class LegacyIdTable {
 	 * Looks up {@code id:meta} and falls back to {@code id:0} for ids without a variant table, so
 	 * {@code /give @s 1:7} still resolves to stone instead of failing.
 	 */
-	public Optional<Identifier> lookupWithFallback(int id, int meta) {
-		Optional<Identifier> direct = this.lookup(id, meta);
+	public Optional<LegacyIdTarget> lookupWithFallback(int id, int meta) {
+		Optional<LegacyIdTarget> direct = this.lookup(id, meta);
 		if (direct.isPresent() || meta == 0) {
 			return direct;
 		}
 		return this.lookup(id, 0);
 	}
 
-	public Map<LegacyId, Identifier> entries() {
+	public Optional<Identifier> lookupIdentifier(LegacyId id) {
+		return this.lookup(id).map(LegacyIdTarget::identifier);
+	}
+
+	public Optional<Identifier> lookupIdentifier(int id, int meta) {
+		return this.lookup(id, meta).map(LegacyIdTarget::identifier);
+	}
+
+	public Map<LegacyId, LegacyIdTarget> entries() {
 		return this.entries;
 	}
 

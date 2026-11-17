@@ -1,6 +1,7 @@
 package cn.kynarain.legacyidaliases.impl;
 
 import cn.kynarain.legacyidaliases.api.LegacyId;
+import cn.kynarain.legacyidaliases.api.LegacyIdTarget;
 import cn.kynarain.legacyidaliases.api.LegacyRegistry;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.Identifier;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,12 +44,13 @@ public final class LegacyData {
 	private static final String EXAMPLE_JSON = """
 		{
 		  "//": "Legacy ID Aliases - user mappings. Every *.json file in this folder is loaded.",
-		  "//format": "registries -> <registry id> -> <id or id:meta> -> <modern identifier>",
+		  "//format": "registries -> <registry id> -> <id or id:meta> -> <identifier or {id, potion}>",
 		  "schema": 1,
 		  "registries": {
 		    "item": {
 		      "35:14": "minecraft:red_wool",
-		      "1000": "minecraft:paper"
+		      "1000": "minecraft:paper",
+		      "373:5": { "id": "minecraft:potion", "potion": "minecraft:healing" }
 		    },
 		    "block": {
 		      "196": "minecraft:oak_sign"
@@ -65,8 +68,8 @@ public final class LegacyData {
 	private static Map<LegacyRegistry, Map<Integer, String>> registryNames = Map.of();
 	private static List<AddedItem> additions = List.of();
 	private static Map<LegacyRegistry, Map<String, String>> renames = Map.of();
-	private static Map<LegacyRegistry, Map<LegacyId, Identifier>> bundledTables = Map.of();
-	private static Map<LegacyRegistry, Map<LegacyId, Identifier>> userTables = Map.of();
+	private static Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> bundledTables = Map.of();
+	private static Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> userTables = Map.of();
 	private static Path configDirectory;
 
 	private LegacyData() {
@@ -88,7 +91,7 @@ public final class LegacyData {
 	public static synchronized void reloadUser() {
 		userLoaded = true;
 		configDirectory = FabricLoader.getInstance().getConfigDir().resolve(CONFIG_FOLDER);
-		Map<LegacyRegistry, Map<LegacyId, Identifier>> loaded = new EnumMap<>(LegacyRegistry.class);
+		Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> loaded = new EnumMap<>(LegacyRegistry.class);
 		List<Path> files = new ArrayList<>();
 		try {
 			Files.createDirectories(configDirectory);
@@ -215,12 +218,12 @@ public final class LegacyData {
 		return Map.copyOf(map);
 	}
 
-	private static Map<LegacyRegistry, Map<LegacyId, Identifier>> readExtraTables(String resource) {
+	private static Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> readExtraTables(String resource) {
 		JsonElement root = readResource(resource);
 		if (root == null) {
 			return Map.of();
 		}
-		Map<LegacyRegistry, Map<LegacyId, Identifier>> raw = new EnumMap<>(LegacyRegistry.class);
+		Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> raw = new EnumMap<>(LegacyRegistry.class);
 		readMappingFile(root, resource, raw);
 		return freezeTables(raw);
 	}
@@ -232,7 +235,7 @@ public final class LegacyData {
 	private static void readMappingFile(
 		JsonElement root,
 		String source,
-		Map<LegacyRegistry, Map<LegacyId, Identifier>> target
+		Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> target
 	) {
 		if (root == null || !root.isJsonObject()) {
 			LOGGER.warn("{} is not a JSON object", source);
@@ -251,7 +254,7 @@ public final class LegacyData {
 				LOGGER.warn("{}: unknown registry '{}'", source, registryEntry.getKey());
 				continue;
 			}
-			Map<LegacyId, Identifier> table = target.computeIfAbsent(registry, key -> new LinkedHashMap<>());
+			Map<LegacyId, LegacyIdTarget> table = target.computeIfAbsent(registry, key -> new LinkedHashMap<>());
 			for (Map.Entry<String, JsonElement> entry : registryEntry.getValue().getAsJsonObject().entrySet()) {
 				LegacyId legacyId;
 				try {
@@ -260,31 +263,43 @@ public final class LegacyData {
 					LOGGER.warn("{}: invalid legacy id '{}'", source, entry.getKey());
 					continue;
 				}
-				String value = mappingValue(entry.getValue());
-				Identifier identifier = value == null ? null : parseIdentifier(value);
-				if (identifier == null) {
-					LOGGER.warn("{}: invalid identifier for '{}'", source, entry.getKey());
+				LegacyIdTarget mapping = parseTarget(entry.getValue());
+				if (mapping == null) {
+					LOGGER.warn("{}: invalid mapping for '{}'", source, entry.getKey());
 					continue;
 				}
-				table.put(legacyId, identifier);
+				table.put(legacyId, mapping);
 			}
 		}
 	}
 
-	private static String mappingValue(JsonElement element) {
+	/**
+	 * Parses a mapping value: either a plain identifier string, or an object with {@code id} and the
+	 * optional {@code potion} shortcut for potions (the variant lives in a data component, not in the
+	 * identifier).
+	 */
+	@Nullable
+	private static LegacyIdTarget parseTarget(JsonElement element) {
 		if (element.isJsonPrimitive()) {
-			return element.getAsString();
+			Identifier identifier = parseIdentifier(element.getAsString());
+			return identifier == null ? null : LegacyIdTarget.of(identifier);
 		}
-		if (element.isJsonObject()) {
-			JsonObject object = element.getAsJsonObject();
-			if (object.has("id")) {
-				return object.get("id").getAsString();
-			}
-			if (object.has("result")) {
-				return object.get("result").getAsString();
-			}
+		if (!element.isJsonObject()) {
+			return null;
 		}
-		return null;
+		JsonObject object = element.getAsJsonObject();
+		JsonElement idElement = object.has("id")
+			? object.get("id")
+			: object.has("result") ? object.get("result") : null;
+		if (idElement == null) {
+			return null;
+		}
+		Identifier identifier = parseIdentifier(idElement.getAsString());
+		if (identifier == null) {
+			return null;
+		}
+		Identifier potion = object.has("potion") ? parseIdentifier(object.get("potion").getAsString()) : null;
+		return potion == null ? LegacyIdTarget.of(identifier) : LegacyIdTarget.ofPotion(identifier, potion);
 	}
 
 	public static Identifier parseIdentifier(String value) {
@@ -298,11 +313,11 @@ public final class LegacyData {
 		return Identifier.tryParse(trimmed);
 	}
 
-	private static Map<LegacyRegistry, Map<LegacyId, Identifier>> freezeTables(
-		Map<LegacyRegistry, Map<LegacyId, Identifier>> raw
+	private static Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> freezeTables(
+		Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> raw
 	) {
-		Map<LegacyRegistry, Map<LegacyId, Identifier>> result = new EnumMap<>(LegacyRegistry.class);
-		for (Map.Entry<LegacyRegistry, Map<LegacyId, Identifier>> entry : raw.entrySet()) {
+		Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> result = new EnumMap<>(LegacyRegistry.class);
+		for (Map.Entry<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> entry : raw.entrySet()) {
 			result.put(entry.getKey(), Collections.unmodifiableMap(new LinkedHashMap<>(entry.getValue())));
 		}
 		return Collections.unmodifiableMap(result);
@@ -336,11 +351,11 @@ public final class LegacyData {
 		return additions;
 	}
 
-	public static Map<LegacyId, Identifier> bundledTable(LegacyRegistry registry) {
+	public static Map<LegacyId, LegacyIdTarget> bundledTable(LegacyRegistry registry) {
 		return bundledTables.getOrDefault(registry, Map.of());
 	}
 
-	public static Map<LegacyId, Identifier> userTable(LegacyRegistry registry) {
+	public static Map<LegacyId, LegacyIdTarget> userTable(LegacyRegistry registry) {
 		return userTables.getOrDefault(registry, Map.of());
 	}
 

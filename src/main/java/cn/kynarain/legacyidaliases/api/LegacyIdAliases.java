@@ -41,9 +41,21 @@ public final class LegacyIdAliases {
 	 *
 	 * <p>The returned identifier is the vanilla one; it is not guaranteed to exist in the current
 	 * registry (a mapping can be stale after a Minecraft update), use
-	 * {@link #resolveEntry(LegacyRegistry, LegacyId)} if an existing entry is required.
+	 * {@link #resolveEntry(LegacyRegistry, LegacyId)} if an existing entry is required. Use
+	 * {@link #resolveTarget(LegacyRegistry, LegacyId)} when the data component of the variant
+	 * matters (potions).
 	 */
 	public static Optional<Identifier> resolve(LegacyRegistry registry, LegacyId id) {
+		return resolveTarget(registry, id).map(LegacyIdTarget::identifier);
+	}
+
+	/**
+	 * Resolves a legacy id including the data component of the variant.
+	 *
+	 * <p>{@code 373:5} resolves to {@code minecraft:potion} plus {@code potion_contents =
+	 * {potion: "minecraft:healing"}}.
+	 */
+	public static Optional<LegacyIdTarget> resolveTarget(LegacyRegistry registry, LegacyId id) {
 		return registry.supportsMeta()
 			? table(registry).lookupWithFallback(id.id(), id.meta())
 			: table(registry).lookup(id.id(), 0);
@@ -51,6 +63,14 @@ public final class LegacyIdAliases {
 
 	public static Optional<Identifier> resolveItem(int id, int meta) {
 		return resolve(LegacyRegistry.ITEM, new LegacyId(id, meta));
+	}
+
+	/**
+	 * Resolves a legacy item id to a ready to use stack, including potion contents.
+	 */
+	public static Optional<net.minecraft.item.ItemStack> resolveItemStack(int id, int meta) {
+		return resolveTarget(LegacyRegistry.ITEM, new LegacyId(id, meta))
+			.map(target -> target.createStack(1));
 	}
 
 	public static Optional<Identifier> resolveBlock(int id, int meta) {

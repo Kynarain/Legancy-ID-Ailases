@@ -3,6 +3,7 @@ package cn.kynarain.legacyidaliases.command;
 import cn.kynarain.legacyidaliases.api.LegacyId;
 import cn.kynarain.legacyidaliases.api.LegacyIdAliases;
 import cn.kynarain.legacyidaliases.api.LegacyIdTable;
+import cn.kynarain.legacyidaliases.api.LegacyIdTarget;
 import cn.kynarain.legacyidaliases.api.LegacyRegistry;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.arguments.ArgumentType;
@@ -32,6 +33,7 @@ import net.minecraft.util.Identifier;
  * <ul>
  *   <li>{@code 35} - legacy id 35, damage 0</li>
  *   <li>{@code 35:14} - legacy id 35, damage 14</li>
+ *   <li>{@code 373:5} - legacy potion, resolved with the {@code potion_contents} data component</li>
  *   <li>{@code minecraft:35} or {@code minecraft:35_14} - the alias identifiers of the registry</li>
  *   <li>anything else - parsed by the vanilla item argument (identifiers, data components, ...)</li>
  * </ul>
@@ -46,8 +48,11 @@ public final class LegacyItemStackArgumentType implements ArgumentType<ItemStack
 		"minecraft:35",
 		"1",
 		"276",
+		"373:5",
 		"minecraft:stone"
 	);
+	private static final String POTION_COMPONENT_PREFIX = "minecraft:potion_contents={potion:'";
+	private static final String POTION_COMPONENT_SUFFIX = "'}";
 
 	private final ItemStackArgumentType delegate;
 
@@ -72,19 +77,51 @@ public final class LegacyItemStackArgumentType implements ArgumentType<ItemStack
 			return this.delegate.parse(reader);
 		}
 		int tokenEnd = reader.getCursor();
-		Optional<Identifier> resolved = LegacyIdAliases.resolveItem(legacyId.id(), legacyId.meta());
-		if (resolved.isEmpty() || !Registries.ITEM.containsId(resolved.get())) {
+		Optional<LegacyIdTarget> resolved = LegacyIdAliases.resolveTarget(LegacyRegistry.ITEM, legacyId);
+		if (resolved.isEmpty() || !Registries.ITEM.containsId(resolved.get().identifier())) {
 			reader.setCursor(start);
 			throw UNKNOWN_LEGACY_ID.createWithContext(reader, legacyId.toString());
 		}
-		// Let the vanilla argument parse the resolved identifier together with the trailing data
-		// components, so "35:14" and "35:14[minecraft:custom_name='x']" both work.
-		String replacement = resolved.get().toString();
-		StringReader rewritten = new StringReader(replacement + reader.getRemaining());
+		LegacyIdTarget target = resolved.get();
+		String identifier = target.identifier().toString();
+		String rest = reader.getRemaining();
+		String replacement = buildReplacement(target, rest);
+		int inserted = replacement.length() - identifier.length() - rest.length();
+		// The vanilla argument parses the resolved identifier plus the trailing data components, so
+		// "35:14" and "35:14[minecraft:custom_name='x']" both keep working, and "373:5" additionally
+		// gets the potion data component.
+		StringReader rewritten = new StringReader(replacement);
 		ItemStackArgument argument = this.delegate.parse(rewritten);
-		int consumedAfterToken = rewritten.getCursor() - replacement.length();
-		reader.setCursor(tokenEnd + consumedAfterToken);
+		int consumedInRest = rewritten.getCursor() - identifier.length() - inserted;
+		reader.setCursor(tokenEnd + Math.max(consumedInRest, 0));
 		return argument;
+	}
+
+	/**
+	 * Builds the string handed to the vanilla item argument: the resolved identifier, the potion data
+	 * component when the legacy id needed one, and the untouched rest of the user input.
+	 */
+	private static String buildReplacement(LegacyIdTarget target, String rest) {
+		String identifier = target.identifier().toString();
+		if (target.isPlain()) {
+			return identifier + rest;
+		}
+		String component = POTION_COMPONENT_PREFIX + target.potion() + POTION_COMPONENT_SUFFIX;
+		int bracket = indexOfFirstNonWhitespace(rest);
+		if (bracket >= 0 && rest.charAt(bracket) == '[') {
+			// Merge our component into the component list the user already wrote.
+			return identifier + rest.substring(0, bracket + 1) + component + "," + rest.substring(bracket + 1);
+		}
+		return identifier + "[" + component + "]" + rest;
+	}
+
+	private static int indexOfFirstNonWhitespace(String text) {
+		for (int index = 0; index < text.length(); index++) {
+			if (!Character.isWhitespace(text.charAt(index))) {
+				return index;
+			}
+		}
+		return -1;
 	}
 
 	@Override
@@ -101,9 +138,8 @@ public final class LegacyItemStackArgumentType implements ArgumentType<ItemStack
 		return EXAMPLES;
 	}
 
-
 	private static boolean isLegacyPrefix(String remaining) {
-		return remaining.matches("[0-9]{1,5}(:[0-9]{0,3})?");
+		return remaining.matches("[0-9]{1,5}(:[0-9]{0,5})?");
 	}
 
 	private static void suggestLegacyIds(String remaining, SuggestionsBuilder builder) {
@@ -133,7 +169,7 @@ public final class LegacyItemStackArgumentType implements ArgumentType<ItemStack
 		}
 		String prefix = Integer.toString(id) + ":";
 		int shown = 0;
-		for (Map.Entry<LegacyId, Identifier> entry : table.entries().entrySet()) {
+		for (Map.Entry<LegacyId, LegacyIdTarget> entry : table.entries().entrySet()) {
 			if (entry.getKey().id() != id) {
 				continue;
 			}
@@ -180,6 +216,4 @@ public final class LegacyItemStackArgumentType implements ArgumentType<ItemStack
 	private static boolean isDigit(char character) {
 		return character >= '0' && character <= '9';
 	}
-
-
 }

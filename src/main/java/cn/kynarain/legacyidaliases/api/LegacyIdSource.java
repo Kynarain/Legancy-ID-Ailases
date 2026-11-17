@@ -13,7 +13,8 @@ import java.util.function.BiConsumer;
 public interface LegacyIdSource {
 	/**
 	 * @param registry the registry whose table is being built
-	 * @param sink     accepts {@code legacy id -> modern identifier} pairs
+	 * @param sink     accepts {@code legacy id -> target} pairs, where a target is a modern
+	 *                 identifier plus the optional data component of the variant (potions)
 	 */
-	void contribute(LegacyRegistry registry, BiConsumer<LegacyId, net.minecraft.util.Identifier> sink);
+	void contribute(LegacyRegistry registry, BiConsumer<LegacyId, LegacyIdTarget> sink);
 }

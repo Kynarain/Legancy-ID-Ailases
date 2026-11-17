@@ -4,6 +4,7 @@ import cn.kynarain.legacyidaliases.api.LegacyId;
 import cn.kynarain.legacyidaliases.api.LegacyIdAliases;
 import cn.kynarain.legacyidaliases.api.LegacyIdSource;
 import cn.kynarain.legacyidaliases.api.LegacyIdTable;
+import cn.kynarain.legacyidaliases.api.LegacyIdTarget;
 import cn.kynarain.legacyidaliases.api.LegacyRegistry;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -130,9 +131,9 @@ public final class LegacyTables {
 			Map<Identifier, RegistryEntry.Reference<?>> aliases = holder.legacyAliases();
 			int added = 0;
 			int unresolved = 0;
-			for (Map.Entry<LegacyId, Identifier> entry : table.entries().entrySet()) {
-				RegistryEntry.Reference<?> target = rawEntry(registry, entry.getValue());
-				if (target == null) {
+			for (Map.Entry<LegacyId, LegacyIdTarget> entry : table.entries().entrySet()) {
+				RegistryEntry.Reference<?> aliasTarget = rawEntry(registry, entry.getValue().identifier());
+				if (aliasTarget == null) {
 					unresolved++;
 					continue;
 				}
@@ -140,7 +141,7 @@ public final class LegacyTables {
 					if (holder.legacyRawContains(alias)) {
 						continue;
 					}
-					if (aliases.putIfAbsent(alias, target) == null) {
+					if (aliases.putIfAbsent(alias, aliasTarget) == null) {
 						added++;
 					}
 				}
@@ -226,7 +227,7 @@ public final class LegacyTables {
 
 	private static LegacyIdTable build(LegacyRegistry registry, @Nullable Registry<?> live) {
 		LegacyData.load();
-		Map<LegacyId, Identifier> collected = new LinkedHashMap<>();
+		Map<LegacyId, LegacyIdTarget> collected = new LinkedHashMap<>();
 		switch (registry) {
 			case BLOCK -> LegacyVanillaData.generateBlocks(collected);
 			case ITEM -> LegacyVanillaData.generateItems(collected);
@@ -243,7 +244,8 @@ public final class LegacyTables {
 		collected.putAll(LegacyData.userTable(registry));
 		List<Identifier> unresolved = new ArrayList<>();
 		if (live != null) {
-			collected.values().removeIf(identifier -> {
+			collected.values().removeIf(target -> {
+				Identifier identifier = target.identifier();
 				boolean missing = !rawContains(live, identifier);
 				if (missing) {
 					unresolved.add(identifier);
@@ -277,8 +279,11 @@ public final class LegacyTables {
 	 * entries were added to the game; the remaining registries continue in registry order, because
 	 * no per-version dataset exists for them.
 	 */
-	private static void allocateMissing(LegacyRegistry registry, Registry<?> live, Map<LegacyId, Identifier> collected) {
-		Set<Identifier> targeted = new HashSet<>(collected.values());
+	private static void allocateMissing(LegacyRegistry registry, Registry<?> live, Map<LegacyId, LegacyIdTarget> collected) {
+		Set<Identifier> targeted = new HashSet<>();
+		for (LegacyIdTarget target : collected.values()) {
+			targeted.add(target.identifier());
+		}
 		if (registry == LegacyRegistry.ITEM || registry == LegacyRegistry.BLOCK) {
 			int nextId = Math.max(FIRST_ALLOCATED_ITEM_ID, maxId(collected) + 1);
 			for (LegacyData.AddedItem added : LegacyData.additions()) {
@@ -286,7 +291,7 @@ public final class LegacyTables {
 				if (identifier == null || targeted.contains(identifier) || !rawContains(live, identifier)) {
 					continue;
 				}
-				collected.put(new LegacyId(nextId++, 0), identifier);
+				collected.put(new LegacyId(nextId++, 0), LegacyIdTarget.of(identifier));
 				targeted.add(identifier);
 			}
 			return;
@@ -296,7 +301,7 @@ public final class LegacyTables {
 			if (targeted.contains(identifier)) {
 				continue;
 			}
-			collected.put(new LegacyId(nextId++, 0), identifier);
+			collected.put(new LegacyId(nextId++, 0), LegacyIdTarget.of(identifier));
 			targeted.add(identifier);
 		}
 	}
@@ -309,7 +314,7 @@ public final class LegacyTables {
 		return max;
 	}
 
-	private static int maxId(Map<LegacyId, Identifier> collected) {
+	private static int maxId(Map<LegacyId, LegacyIdTarget> collected) {
 		int max = -1;
 		for (LegacyId id : collected.keySet()) {
 			max = Math.max(max, id.id());
