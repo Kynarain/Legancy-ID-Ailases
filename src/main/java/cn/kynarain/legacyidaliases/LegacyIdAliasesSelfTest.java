@@ -3,6 +3,7 @@ package cn.kynarain.legacyidaliases;
 import cn.kynarain.legacyidaliases.api.LegacyId;
 import cn.kynarain.legacyidaliases.api.LegacyIdAliases;
 import cn.kynarain.legacyidaliases.api.LegacyIdTable;
+import cn.kynarain.legacyidaliases.api.LegacyIdTarget;
 import cn.kynarain.legacyidaliases.api.LegacyRegistry;
 import cn.kynarain.legacyidaliases.impl.LegacyTables;
 import com.mojang.brigadier.ParseResults;
@@ -86,6 +87,29 @@ public final class LegacyIdAliasesSelfTest {
 		failures += expectParse(server, report, "clear @s 35:14");
 		failures += expectParse(server, report, "item replace entity @s weapon.mainhand with 35:14");
 		failures += expectParse(server, report, "setblock 0 0 0 minecraft:35");
+
+		// Public API: runtime mappings, stats and unresolved diagnostics.
+		LegacyId runtimePlain = new LegacyId(9900, 3);
+		LegacyId runtimePotion = LegacyId.of(9901);
+		LegacyIdAliases.addMapping(
+			LegacyRegistry.ITEM,
+			runtimePlain,
+			LegacyIdTarget.of(Identifier.of("minecraft", "diamond"))
+		);
+		LegacyIdAliases.addMapping(
+			LegacyRegistry.ITEM,
+			runtimePotion,
+			LegacyIdTarget.ofPotion(Identifier.of("minecraft", "potion"), Identifier.of("minecraft", "swiftness"))
+		);
+		failures += expect(server, report, "give @s 9900:3", "minecraft:diamond");
+		failures += expect(server, report, "give @s 9901", "minecraft:potion", "minecraft:swiftness");
+		report.add(
+			"runtime mapping: " + LegacyIdAliases.resolveItem(9900, 3).orElse(null)
+				+ ", alias=" + LegacyIdAliases.aliasId(LegacyRegistry.ITEM, runtimePlain)
+				+ ", removed=" + LegacyIdAliases.removeMapping(LegacyRegistry.ITEM, runtimePlain)
+		);
+		report.add("stats(item)=" + LegacyIdAliases.stats().get(LegacyRegistry.ITEM));
+		report.add("unresolved(item)=" + LegacyIdAliases.unresolved(LegacyRegistry.ITEM));
 
 		LegacyId sample = new LegacyId(35, 14);
 		report.add(

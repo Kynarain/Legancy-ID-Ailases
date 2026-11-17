@@ -3,8 +3,11 @@ package cn.kynarain.legacyidaliases.api;
 import cn.kynarain.legacyidaliases.impl.LegacyAliasHolder;
 import cn.kynarain.legacyidaliases.impl.LegacyTables;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.Identifier;
@@ -68,9 +71,13 @@ public final class LegacyIdAliases {
 	/**
 	 * Resolves a legacy item id to a ready to use stack, including potion contents.
 	 */
-	public static Optional<net.minecraft.item.ItemStack> resolveItemStack(int id, int meta) {
+	public static Optional<ItemStack> resolveItemStack(int id, int meta) {
+		return resolveItemStack(id, meta, 1);
+	}
+
+	public static Optional<ItemStack> resolveItemStack(int id, int meta, int count) {
 		return resolveTarget(LegacyRegistry.ITEM, new LegacyId(id, meta))
-			.map(target -> target.createStack(1));
+			.map(target -> target.createStack(count));
 	}
 
 	public static Optional<Identifier> resolveBlock(int id, int meta) {
@@ -91,10 +98,49 @@ public final class LegacyIdAliases {
 
 	/**
 	 * Registers an extra id source. Call during mod initialization so the source participates in
-	 * the tables built when the registries are frozen.
+	 * the tables built when the registries are frozen. Sources registered later still take effect:
+	 * the tables are rebuilt and the aliases are injected again.
 	 */
 	public static void registerSource(LegacyIdSource source) {
 		LegacyTables.registerSource(source);
+	}
+
+	/**
+	 * Adds a single mapping at runtime. Component carrying targets (potions) are supported; they
+	 * affect {@code /give} and {@link #resolveTarget}, while the registry aliases of that id can only
+	 * carry the identifier.
+	 */
+	public static void addMapping(LegacyRegistry registry, LegacyId id, LegacyIdTarget target) {
+		LegacyTables.addMapping(registry, id, target);
+	}
+
+	/**
+	 * Removes a mapping added through {@link #addMapping}.
+	 *
+	 * @return {@code true} if a runtime mapping was removed
+	 */
+	public static boolean removeMapping(LegacyRegistry registry, LegacyId id) {
+		return LegacyTables.removeMapping(registry, id);
+	}
+
+	/**
+	 * @return the identifiers that the bundled/user mappings point at but the current registry does
+	 *         not know (for example after a Minecraft update renamed an entry)
+	 */
+	public static List<Identifier> unresolved(LegacyRegistry registry) {
+		return LegacyTables.unresolved(registry);
+	}
+
+	/**
+	 * @return per registry statistics of the last alias injection
+	 */
+	public static Map<LegacyRegistry, LegacyRegistryStats> stats() {
+		Map<LegacyRegistry, LegacyRegistryStats> result = new EnumMap<>(LegacyRegistry.class);
+		LegacyTables.stats().forEach((registry, stats) -> result.put(
+			registry,
+			new LegacyRegistryStats(stats.entries(), stats.aliases(), stats.unresolved())
+		));
+		return Map.copyOf(result);
 	}
 
 	/**

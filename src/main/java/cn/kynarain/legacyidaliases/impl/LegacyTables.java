@@ -43,6 +43,8 @@ public final class LegacyTables {
 	private static final Map<Registry<?>, Boolean> SEEN = new WeakHashMap<>();
 	private static final Set<Registry<?>> INJECTED = Collections.newSetFromMap(new IdentityHashMap<>());
 	private static final List<LegacyIdSource> SOURCES = new CopyOnWriteArrayList<>();
+	/** Mappings added at runtime through the API; highest priority. */
+	private static final Map<LegacyRegistry, Map<LegacyId, LegacyIdTarget>> RUNTIME = new EnumMap<>(LegacyRegistry.class);
 
 	private LegacyTables() {
 	}
@@ -195,6 +197,35 @@ public final class LegacyTables {
 		return true;
 	}
 
+	/**
+	 * Adds a mapping at runtime. The table and the aliases are rebuilt when the tables were already
+	 * built, so the mapping is usable immediately.
+	 */
+	public static void addMapping(LegacyRegistry registry, LegacyId id, LegacyIdTarget target) {
+		Objects.requireNonNull(registry, "registry");
+		Objects.requireNonNull(id, "id");
+		Objects.requireNonNull(target, "target");
+		synchronized (LOCK) {
+			RUNTIME.computeIfAbsent(registry, key -> new LinkedHashMap<>()).put(id, target);
+			if (!BUILT.isEmpty()) {
+				rebuildLocked();
+			}
+		}
+	}
+
+	public static boolean removeMapping(LegacyRegistry registry, LegacyId id) {
+		synchronized (LOCK) {
+			Map<LegacyId, LegacyIdTarget> runtime = RUNTIME.get(registry);
+			if (runtime == null || runtime.remove(id) == null) {
+				return false;
+			}
+			if (!BUILT.isEmpty()) {
+				rebuildLocked();
+			}
+			return true;
+		}
+	}
+
 	public static boolean removeAlias(Registry<?> registry, Identifier alias) {
 		return registry instanceof LegacyAliasHolder holder && holder.legacyAliases().remove(alias) != null;
 	}
@@ -242,6 +273,7 @@ public final class LegacyTables {
 			}
 		}
 		collected.putAll(LegacyData.userTable(registry));
+		collected.putAll(RUNTIME.getOrDefault(registry, Map.of()));
 		List<Identifier> unresolved = new ArrayList<>();
 		if (live != null) {
 			collected.values().removeIf(target -> {
